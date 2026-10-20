@@ -41,6 +41,7 @@ import torch
 import torch.nn as nn
 import tyro
 
+from device_utils import manual_seed_all, resolve_device
 from giga_models.sockets import RobotInferenceServer
 
 _SAVE_COUNTER = 0
@@ -541,7 +542,9 @@ def get_policy(
     expected_state_dim: int | None = None,
     is_robot_moving: bool = False,
     is_body_moving: bool = False,
+    device: str | None = None,
 ):
+    device = str(resolve_device(device))
     required_paths = {
         '--model-path': model_path,
         '--pretrained-path': pretrained_path,
@@ -678,7 +681,7 @@ def get_policy(
     # 3. Cast and move to GPU.
     if use_bf16:
         policy.to(dtype=torch.bfloat16)
-    nn.Module.to(policy, 'cuda')
+    nn.Module.to(policy, device)
     policy.eval()
 
     inference_dtype = next(policy.parameters()).dtype
@@ -752,11 +755,11 @@ def get_policy(
     absolute_actions = AbsoluteActions({embodiment_id: delta_mask})
     pad_states_and_actions = PadStatesAndActions(action_dim=policy.max_action_dim)
 
-    state_normalize.to('cuda')
-    action_unnormalize.to('cuda')
-    state_unnormalize.to('cuda')
-    absolute_actions.to('cuda')
-    prompt_transform.to('cuda')
+    state_normalize.to(device)
+    action_unnormalize.to(device)
+    state_unnormalize.to(device)
+    absolute_actions.to(device)
+    prompt_transform.to(device)
 
     # 6. Bind inference method.
     _save_dir = save_dir
@@ -861,7 +864,7 @@ def get_policy(
                 images[pad_key] = explicit_pad_masks[pad_key]
 
         task = data['task']
-        state = data['observation.state'].to('cuda')
+        state = data['observation.state'].to(device)
 
         imgs, img_masks, image_params = image_transform(images)
         if images.get('_skip_loss_for_invalid_images', False):
@@ -897,12 +900,12 @@ def get_policy(
             proprioception = state_padded.unsqueeze(0).unsqueeze(0)
             anchor_agent_pos_mask = mask_padded.unsqueeze(0).unsqueeze(0)
 
-        emb_ids = torch.tensor(embodiment_id, dtype=torch.long, device='cuda').unsqueeze(0)
-        images_batched = [img.unsqueeze(0).to('cuda') for img in imgs]
-        img_masks_batched = [m.unsqueeze(0).to('cuda') for m in img_masks]
-        lang_tokens_b = lang_tokens.unsqueeze(0).to('cuda')
-        lang_masks_b = lang_masks.unsqueeze(0).to('cuda')
-        lang_att_masks_b = lang_att_masks.unsqueeze(0).to('cuda')
+        emb_ids = torch.tensor(embodiment_id, dtype=torch.long, device=device).unsqueeze(0)
+        images_batched = [img.unsqueeze(0).to(device) for img in imgs]
+        img_masks_batched = [m.unsqueeze(0).to(device) for m in img_masks]
+        lang_tokens_b = lang_tokens.unsqueeze(0).to(device)
+        lang_masks_b = lang_masks.unsqueeze(0).to(device)
+        lang_att_masks_b = lang_att_masks.unsqueeze(0).to(device)
 
         if _save_dir:
             save_inference_inputs(
@@ -919,7 +922,7 @@ def get_policy(
 
         if inference_seed is not None:
             torch.manual_seed(inference_seed)
-            torch.cuda.manual_seed_all(inference_seed)
+            manual_seed_all(inference_seed, device)
 
         pred_action = policy.sample_actions(
             images=images_batched,
@@ -934,7 +937,7 @@ def get_policy(
             ),
             proprioception=proprioception,
             agent_pos_mask=anchor_agent_pos_mask,
-            state=(state_padded.unsqueeze(0) if state_padded.dim() == 1 else state_padded).to('cuda'),
+            state=(state_padded.unsqueeze(0) if state_padded.dim() == 1 else state_padded).to(device),
         )
 
         pred_action = _zero_dims_after(pred_action, deployment_action_dim)
@@ -1030,6 +1033,7 @@ def run_server(
     expected_state_dim: int | None = None,
     is_robot_moving: bool = False,
     is_body_moving: bool = False,
+    device: str | None = None,
 ) -> None:
     """Launch the unified inference server.
 
@@ -1057,6 +1061,7 @@ def run_server(
             This does not change the state input dimensions.
         is_body_moving: Enable state-aligned body action outputs while the mobile base is
             stationary. This does not change the state input dimensions.
+        device: Torch device to serve on. Defaults to the first XPU, else the first CUDA GPU, else CPU.
     """
     policy = get_policy(
         model_path=model_path,
@@ -1072,6 +1077,7 @@ def run_server(
         expected_state_dim=expected_state_dim,
         is_robot_moving=is_robot_moving,
         is_body_moving=is_body_moving,
+        device=device,
     )
 
     server = RobotInferenceServer(policy, host=host, port=port)

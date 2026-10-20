@@ -67,6 +67,7 @@ torch._dynamo.config.disable = True
 # Import giga_models BEFORE matplotlib: matplotlib loads native libs that conflict with
 # torchao's cpp-extension probe, segfaulting if matplotlib is imported first. Pulling in
 # the giga modeling module here (after the torch.compile patch) settles the load order.
+from device_utils import resolve_device  # noqa: E402
 from giga_models import GigaBrain07Policy  # noqa: F401,E402
 
 
@@ -83,7 +84,8 @@ def parse_args():
     parser.add_argument('--checkpoint-subdir', type=str, default='model_ema',
                         choices=['model_ema', 'model', 'auto'],
                         help='Diffusers subdir under checkpoint root. Default evaluates EMA weights.')
-    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--device', type=str, default=None,
+                        help='Torch device. Defaults to the first XPU, else cuda:0, else CPU.')
     parser.add_argument('--dtype', type=str, default='bfloat16', choices=['bfloat16', 'float32'])
     parser.add_argument('--sampler-backend', type=str, default='sample_actions',
                         choices=['sample_actions', 'train_forward'],
@@ -985,7 +987,7 @@ def _feature_names(sample: dict[str, Any], key: str) -> list[str] | None:
 
 def main():
     args = parse_args()
-    device = args.device
+    device = str(resolve_device(args.device))
     if device.startswith('cuda'):
         torch.cuda.set_device(torch.device(device))
     if args.seed is not None:

@@ -109,6 +109,24 @@ This substitution is not a repository-wide benchmark requirement. Benchmark
 workflows may use different dataset readers and dependency versions; follow
 the corresponding benchmark guide instead.
 
+### How to run the same on Intel's XPU
+
+Inference runs on Intel GPUs with the PyTorch XPU build. Skip the pinned `torch`, `torchvision`, `torchcodec` and `triton`
+lines of `requirements-paligemma2.txt` (they are the CUDA builds), and install the XPU wheels after the other requirements
+(`lerobot` pulls in a CUDA `torch`, and pip prints a version warning for it that can be ignored):
+
+```bash
+grep -v -E '^(torch|torchvision|torchcodec|triton)==' requirements-paligemma2.txt > requirements-xpu.txt
+python -m pip install -r requirements-xpu.txt
+python -m pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/xpu
+```
+
+Then install `giga-datasets`, `giga-train` and `giga-models` and set `PYTHONPATH` as in the steps above. Run the same server and rollout
+commands from the Quick start without `--device cuda:0` or `CUDA_VISIBLE_DEVICES`. The device defaults to the first XPU, then
+CUDA, then CPU, and `--device xpu:1` picks another card on either script. Use `ZE_AFFINITY_MASK=0` to
+expose only one card. The server and the rollout script have no flash-attn or CUDA-graph path to disable; the Triton
+CUDA-graph runner in `giga-models` stays CUDA-only.
+
 ## 🚀 Quick start
 
 This section covers the mainline PiPER and H01 configs linked in
