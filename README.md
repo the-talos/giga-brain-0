@@ -121,7 +121,7 @@ python -m pip install -r requirements-xpu.txt
 python -m pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/xpu
 ```
 
-Then install `giga-datasets`, `giga-train` and `giga-models` and set `PYTHONPATH` as in the steps above. Run the same server and rollout
+Then install the three `giga-*` packages and set `PYTHONPATH` as in the steps above. Run the same server and rollout
 commands from the Quick start without `--device cuda:0` or `CUDA_VISIBLE_DEVICES`. The device defaults to the first XPU, then
 CUDA, then CPU, and `--device xpu:1` picks another card on either script. Use `ZE_AFFINITY_MASK=0` to
 expose only one card. The server and the rollout script have no flash-attn or CUDA-graph path to disable; the Triton
